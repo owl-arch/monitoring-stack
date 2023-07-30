@@ -1,0 +1,237 @@
+#---
+# Author: Marcos Antonio de Carvalho (maio/2023)
+# Descr.:
+#--
+
+version: "3.7"
+
+##-----------##     
+##  Volumes  ##
+##-----------##
+volumes:
+  # volume para adicionar datasource de forma automatizada assim que o serviço do Grafana subir. 
+  # Usa o ds-prometheus.yml dentro do diretório grafana_provisioning/Utiliza
+  prometheus_data: {}
+  # volume do prometheus
+  grafana_data: {}
+
+##------------##     
+##  Networks  ##
+##------------##
+networks:
+
+  # Rede de Backend
+  backend:
+#    ipam:
+#      driver: bridge
+#      config:
+#        - subnet: "10.10.10.0/24"
+#          gateway: 10.10.10.254
+
+##------------##     
+##  Services  ##
+##------------##
+services:
+
+  rabbitmq:
+    # http://localhost:15692/metrics
+    build: 
+      context: .
+      dockerfile: rabbitmq/Dockerfile.rabbitmq
+    image: owl/rabbitmq:events_channels
+    container_name: rabbitmq
+    hostname: rabbitmq
+    user: nobody  # Restrição de acesso 
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "15692:15692"
+  #  volumes: 
+  #    - ./rabbitmq/data/:/var/lib/rabbitmq/
+  #    - ./rabbitmq/log/:/var/log/
+    networks:
+      backend:
+ #       ipv4_address: 10.10.10.1
+    
+
+  prometheus:
+    build: 
+      #context: .
+      #dockerfile: prometheus/Dockerfile.prometheus
+      context: dockerfiles
+      dockerfile: prometheus/Dockerfile
+    image: owl/prometheus:observability
+    #image: prom/prometheus
+    container_name: prometheus
+    hostname: prometheus
+    # automatically restarts the container - Docker daemon on restart or
+    # the container itself is manually restarted
+    restart: always
+    ports:
+      - "9090:9090"    
+    volumes:
+      - ./dockerfiles/prometheus/config:/etc/prometheus/ # Arquivo de configuração
+      #- ./prometheus/data:/prometheus        # Banco de dados de serie temporais
+      - prometheus_data:/prometheus        # Banco de dados de serie temporais
+    entrypoint: prometheus 
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml' # Arquivo de configuração
+      - "--storage.tsdb.path=/prometheus"              # Banco de dados de serie temporais
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - '--storage.tsdb.retention.time=360h'           # Tempo de retenção dos Dados
+      - '--web.enable-lifecycle'
+    networks:
+      backend:
+        #ipv4_address: 10.10.10.13         
+
+  grafana:
+    build: 
+      context: .
+      dockerfile: grafana/Dockerfile.grafana
+    #image: grafana/grafana-enterprise:latest # Linux Alpine 3.17.3 
+    image: owl/grafana:observability
+    container_name: grafana
+    hostname: grafana
+    user: grafana # Usuário 'grafana' é "472"
+    depends_on:
+      - prometheus
+    restart: always
+    volumes:
+      # Banco de dados do Grafana com informações de usuários, configurações, dashboards, etc.
+      - grafana_data:/var/lib/grafana
+      #- ./grafana/data/:/var/lib/grafana
+      # Diretório de provisionamento onde definimos o datasource padrão que seram
+      # usados pelo Grafana assim que ele iniciar.
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+    #environment:
+      #- GF_SECURITY_ADMIN_USER=admin
+      #- GF_SECURITY_ADMIN_PASSWORD=owl
+      #- GF_INSTALL_PLUGINS=grafana-piechart-panel,agenty-flowcharting-panel
+
+      #- GF_INSTALL_PLUGINS="rabbitmq_prometheus,grafana-clock-panel,grafana-simple-json-datasource,grafana-worldmap-panel,percona-percona-app"
+
+      # giricops
+      #GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-piechart-panel,camptocamp-prometheus-alertmanager-datasource,vonage-status-panel
+    ports:
+      - "3000:3000"
+    networks:
+      backend:    
+        #ipv4_address: 10.10.10.14  
+      
+
+  node-exporter:
+    # http://localhost:9100/metrics
+    build: 
+      context: .
+      dockerfile: node-exporter/Dockerfile
+    image: owl/node-exporter:observability
+    container_name: node-exporter
+    hostname: node-exporter
+    #user: nobody # Restrição de acesso 
+    restart: always
+    volumes:
+      - ./node-exporter/proc:/usr/proc:ro 
+      - ./node-exporter/sys:/usr/sys:ro
+      - ./node-exporter/:/rootfs:ro 
+    ports:
+      - 9100:9100
+    #deploy:
+    #  mode: global
+    networks:
+      backend:
+        #ipv4_address: 10.10.10.15       
+
+ # alertmanager:
+ #   build: 
+ #     context: .
+ #     dockerfile: alertmanager/Dockerfile
+ #   image: owl/alertmanager:monitoring
+ #   container_name: alertmanager
+ #   hostname: alertmanager
+ #   #user: nobody # Restrição de acesso 
+ #   restart: always
+ #   volumes:
+ #     - ./alertmanager/conf/:/etc/alertmanager
+ #   ports:
+ #     - 9093:9093
+ #   networks:
+ #     backend:
+ #       ipv4_address: 10.10.10.16      
+
+
+#  redis: 
+#    image: redis:alpine 
+#    container_name: 'redis'
+#    ports: 
+#      - "6379:6379"
+#    networks:
+#      backend:
+#        ipv4_address: 10.10.10.2 
+
+
+#  flower:
+#    image: mher/flower:0.9.7
+#    container_name: 'flower'
+#    environment:
+#      - CELERY_BROKER_URL=amqp://owl:owl@10.10.10.1
+#      #- CELERY_BROKER_URL=amqp://owl:owl@broker
+#     - FLOWER_PORT=8888
+#    ports:
+#      - 8889:8888
+#    depends_on:
+#      - rabbitmq 
+#    networks:
+#      backend:
+#        ipv4_address: 10.10.10.4
+
+
+
+# CONTAINERS SÃO EFÊMEROS !!! (nasce para morrer)
+# São imutáveis !!!
+
+#
+# [LIVE] - ULTIMO EPISODIO DA SERIE SOBRE MONITORAÇÃO
+# https://www.youtube.com/watch?v=aIXJmxGCCXY
+#
+
+# docker swarm --help
+# docker swarm init 
+
+# docker node --help
+# docker node ls
+#
+
+# docker stack --help
+# Deploy
+# docker stack deploy -c docker-compose nome_da_stack
+# docker stack rm nome_da_stack
+
+# docker service --help
+# docker service ls
+
+# Como funciona o DNS em Containers | Docker
+# https://www.youtube.com/watch?v=3mtttLY8VvM
+
+# para levantar e segura o container no ar por uma hora
+# docker container run -d --name container_a busybox sleep 3600
+
+# Criar uma rede Bridge
+# docker network create my_network -d bridge
+
+
+
+
+# docker network prune (deleta todas as redes que nao estiver em uso)
+# docker volume prune (deleta todos os volumes que nao estiver em uso)
+
+# Tirando uma copia de diretorio do container
+# docker container cp my_container:diretorio_do_container .
+
+
+# DNS interno do Docker
+# host.docker.internal:9999
+# host.docker.internal
+# docker.for.mac.localhost
+
+

@@ -1,0 +1,17 @@
+{
+	"ulid": "01H28HX46302F5V9F4M77TW8CT",
+	"minTime": 1686011584450,
+	"maxTime": 1686016800000,
+	"stats": {
+		"numSamples": 181596,
+		"numSeries": 2062,
+		"numChunks": 2445
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01H28HX46302F5V9F4M77TW8CT"
+		]
+	},
+	"version": 1
+}

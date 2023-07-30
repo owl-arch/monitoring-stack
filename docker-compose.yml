@@ -1,0 +1,190 @@
+version: '3.7'
+
+networks:
+  backend:
+
+volumes:
+    prometheus_data:
+    grafana_data:
+    rocket_uploads:
+    mongodb_data:
+
+services:
+
+#  prom:
+#    image: linuxtips/prometheus_alpine
+#    volumes:
+#      - ./conf/prometheus/:/etc/prometheus/
+#      - prometheus_data:/var/lib/prometheus
+#    networks:
+#      - backend
+#    ports:
+#      - 9091:9090
+
+  prometheus:
+    build: 
+      context: .
+      dockerfile: dockerfiles/prometheus/Dockerfile
+    image: owl/prometheus:monitoring
+    #image: prom/prometheus
+    hostname: prometheus
+    # automatically restarts the container - Docker daemon on restart or
+    # the container itself is manually restarted
+    restart: always
+    ports:
+      - "9090:9090"    
+    volumes:
+      - ./mount/prometheus/config:/etc/prometheus/ # Arquivo de configuração
+      - ./mount/prometheus/data:/prometheus        # Banco de dados de serie temporais
+      #- ./mount/prometheus_data:/prometheus       # Banco de dados de serie temporais
+    entrypoint: prometheus 
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml' # Arquivo de configuração
+      - "--storage.tsdb.path=/prometheus"              # Banco de dados de serie temporais
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - '--storage.tsdb.retention.time=360h'           # Tempo de retenção dos Dados
+      - '--web.enable-lifecycle'
+    networks:
+      backend:
+    
+
+#  graf:
+#    image: grafana/grafana
+#    depends_on:
+#      - prometheus
+#    volumes:
+#      - grafana_data:/var/lib/grafana
+#    env_file:
+#      - grafana.config
+#    networks:
+#      - backend
+#      #- frontend
+#    ports:
+#      - 3001:3000
+
+  grafana:
+    build: 
+      context: .
+      dockerfile: dockerfiles/grafana/Dockerfile
+    #image: grafana/grafana-enterprise:latest # Linux Alpine 3.17.3 
+    image: owl/grafana:monitoring
+    user: grafana # Usuário 'grafana' é "472"
+    depends_on:
+      - prometheus
+    restart: always
+    volumes:
+      # Banco de dados do Grafana com informações de usuários, configurações, dashboards, etc.
+      #- ./mount/grafana/data_volume:/var/lib/grafana
+      - grafana_data:/var/lib/grafana
+      #- ./mount/grafana/data/:/var/lib/grafana
+      # Diretório de provisionamento onde definimos o datasource padrão que seram
+      # usados pelo Grafana assim que ele iniciar.
+      - ./mount/grafana/provisioning/:/etc/grafana/provisioning/
+    ports:
+      - "3000:3000"
+    networks:
+      backend: 
+
+  node-exporter:
+    # http://localhost:9100/metrics
+    build: 
+      context: .
+      dockerfile: dockerfiles/node-exporter/Dockerfile
+    image: owl/node-exporter:monitoring  
+    #image: linuxtips/node-exporter_alpine
+    hostname: '{{.Node.ID}}'
+    volumes:
+      - ./mount/node-exporter/proc:/usr/proc
+      - ./mount/node-exporter/sys:/usr/sys
+      - ./mount/node-exporter/rootfs:/rootfs
+    deploy:
+      mode: global
+    networks:
+      - backend
+    ports:
+      - 9100:9100
+
+#  alertmanager:
+#    build: 
+#      context: .
+#     dockerfile: dockerfiles/alertmanager/Dockerfile
+#    image: owl/alertmanager:monitoring
+#    #image: linuxtips/alertmanager_alpine
+#    volumes:
+#      - ./mount/alertmanager/config:/etc/alertmanager/
+#    networks:
+#      - backend
+#    ports:
+#      - 9093:9093
+
+#  cad:
+#    image: google/cadvisor
+#   hostname: '{{.Node.ID}}'
+#    volumes:
+#      - /:/rootfs:ro
+#      - /var/run:/var/run:rw
+#      - /sys:/sys:ro
+#      - /var/lib/docker/:/var/lib/docker:ro
+#      - /var/run/docker.sock:/var/run/docker.sock:ro
+#    networks:
+#      - backend
+#    deploy:
+#      mode: global
+#    ports:
+#      - 8081:8080 
+
+  cadvisor:
+    # http://localhost:8080
+    build: 
+      context: .
+      dockerfile: dockerfiles/cadvisor/Dockerfile
+    image: owl/cadvisor:monitoring
+    #image: google/cadvisor
+    hostname: '{{.Node.ID}}'
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - backend
+    deploy:
+      mode: global
+    ports:
+      - 8080:8080
+
+# If you already have a RocketChat instance running, just comment the code of rocketchat, mongo and mongo-init-replica services bellow
+#  rocketchat:
+#    image: rocketchat/rocket.chat:latest
+#    volumes:
+#      - rocket_uploads:/app/uploads
+#    environment:
+#      - PORT=3080
+#      #- ROOT_URL=http://YOUR_IP:3080
+#      - ROOT_URL=http://172.20.15.55:3080
+#      - MONGO_URL=mongodb://mongo:27017/rocketchat
+#      - MONGO_OPLOG_URL=mongodb://mongo:27017/local
+##      - MAIL_URL=smtp://user:pass@smtp.email
+##      - HTTP_PROXY=http://proxy.domain.com
+##      - HTTPS_PROXY=http://proxy.domain.com
+#    depends_on:
+#      - mongo
+#    ports:
+#      - 3080:3080
+
+#  mongo:
+#    image: mongo:3.4.23
+#    volumes:
+#     - mongodb_data:/data/db
+#     #- ./data/dump:/dump
+#    command: mongod --smallfiles --oplogSize 128 --replSet rs0
+
+#  mongo-init-replica:
+#    image: mongo:3.4.23
+#    command: 'mongo mongo/rocketchat --eval "rs.initiate({ _id: ''rs0'', members: [ { _id: 0, host: #''localhost:27017'' } ]})"'
+#    depends_on:
+#      - mongo
+
+
